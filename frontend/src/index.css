@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Cross-browser text size adjust */
+html {
+  text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Safari backdrop-filter fallback for glass UI */
+@layer utilities {
+  .backdrop-blur-lg {
+    -webkit-backdrop-filter: blur(16px);
+  }
+}

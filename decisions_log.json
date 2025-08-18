@@ -1,0 +1,42 @@
+[
+    {
+        "query": "46-year-old male, knee surgery in Pune, 3-month-old insurance policy",
+        "result": {
+            "decision": "Rejected",
+            "amount": "₹0",
+            "justification": "No clear clause found that approves this case within the 3-month window."
+        }
+    },
+    {
+        "query": "46-year-old male, knee surgery in Pune, 3-month-old insurance policy",
+        "result": {
+            "decision": "Rejected",
+            "amount": "₹0",
+            "justification": "No clear clause found that approves this case within the 3-month window."
+        }
+    },
+    {
+        "query": "58-year-old female, appendix surgery, accidental injury, 2-month-old policy",
+        "result": {
+            "decision": "Rejected",
+            "amount": "₹0",
+            "justification": "No clear clause found that approves this case within the 3-month window."
+        }
+    },
+    {
+        "query": "46-year-old male, knee surgery in Pune, 3-month-old insurance policy",
+        "result": {
+            "decision": "Rejected",
+            "amount": "₹0",
+            "justification": "No clear clause found that approves this case within the 3-month window."
+        }
+    },
+    {
+        "query": "58-year-old female, appendix surgery, accidental injury, 2-month-old policy",
+        "result": {
+            "decision": "Rejected",
+            "amount": "₹0",
+            "justification": "No clear clause found that approves this case within the 3-month window."
+        }
+    }
+]

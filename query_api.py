@@ -2,7 +2,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sentence_transformers import SentenceTransformer
 from openai import OpenAI
 from pinecone import Pinecone, ServerlessSpec
 import json
@@ -15,9 +14,10 @@ load_dotenv()  # Load keys from .env file
 
 # Load environment variables
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
-PINECONE_INDEX = os.getenv("PINECONE_INDEX", "policy-index")
+PINECONE_INDEX = os.getenv("PINECONE_INDEX", "policy-index-1536")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+OPENAI_EMBED_MODEL = os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-small")
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
@@ -35,7 +35,8 @@ print(f"🔧 Configured OpenAI model: {PRIMARY_OPENAI_MODEL}")
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],
+    # In production, restrict this to your Vercel domain.
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -47,18 +48,21 @@ async def ping():
     print("✅ Pinged FastAPI")
     return {"message": "pong"}
 
-# Load model
-# We use MiniLM ("all-MiniLM-L6-v2") here for fast, local embedding generation.
-# This is much faster and cheaper than calling ChatGPT (OpenAI) for embeddings,
-# and is sufficient for semantic search/vector database use cases.
-model = SentenceTransformer("all-MiniLM-L6-v2")
+# --- Embeddings ---
+# To fit within low-memory hosts (e.g., Render free tier), we use
+# OpenAI's hosted embeddings instead of loading a local transformer.
+EMBED_DIM = 1536  # text-embedding-3-small
+
+def embed_text(text: str) -> list:
+    resp = client.embeddings.create(model=OPENAI_EMBED_MODEL, input=text)
+    return resp.data[0].embedding
 
 # Connect to Pinecone
 pc = Pinecone(api_key=PINECONE_API_KEY)
 if PINECONE_INDEX not in pc.list_indexes().names():
     pc.create_index(
         name=PINECONE_INDEX,
-        dimension=384,
+        dimension=EMBED_DIM,
         metric='cosine',
         spec=ServerlessSpec(cloud='aws', region='us-east-1')
     )
@@ -149,7 +153,7 @@ async def run_query(data: Query):
 
     # Step 1: Generate query embedding
     try:
-        query_vector = model.encode(data.query).tolist()
+        query_vector = embed_text(data.query)
         print("✅ Query embedding created")
     except Exception as e:
         print("❌ Embedding failed:", e)

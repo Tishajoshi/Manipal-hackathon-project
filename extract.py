@@ -3,15 +3,17 @@ import os
 import fitz  # PyMuPDF
 import re
 import numpy as np
-from sentence_transformers import SentenceTransformer
 from pinecone import Pinecone, ServerlessSpec
+from openai import OpenAI
 from dotenv import load_dotenv
 
 # --- Load environment variables ---
 load_dotenv()
 
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
-PINECONE_INDEX = os.getenv("PINECONE_INDEX", "policy-index")
+PINECONE_INDEX = os.getenv("PINECONE_INDEX", "policy-index-1536")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_EMBED_MODEL = os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-small")
 
 # --- Initialize Pinecone ---
 pc = Pinecone(api_key=PINECONE_API_KEY)
@@ -26,8 +28,13 @@ if PINECONE_INDEX not in pc.list_indexes().names():
 
 index = pc.Index(PINECONE_INDEX)
 
-# --- Load Sentence Transformer ---
-model = SentenceTransformer("all-MiniLM-L6-v2")
+# --- Embeddings via OpenAI (smaller memory footprint) ---
+EMBED_DIM = 1536
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+def embed_text(text: str) -> list:
+    resp = client.embeddings.create(model=OPENAI_EMBED_MODEL, input=text)
+    return resp.data[0].embedding
 
 # --- Utility functions ---
 def extract_text_from_pdf(pdf_path):
@@ -65,7 +72,7 @@ for file in pdf_files:
 
     vectors = []
     for i, chunk in enumerate(chunks):
-        vec = model.encode(chunk).tolist()
+        vec = embed_text(chunk)
         vectors.append({
             "id": f"{file}_chunk{i}",
             "values": vec,

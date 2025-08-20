@@ -92,9 +92,8 @@ export default function Navbar() {
 
   return (
     <nav
-      className="shadow-md fixed top-0 inset-x-0 z-50"
+      className="shadow-md fixed top-0 inset-x-0 z-50 bg-gradient-to-r from-[#0e0e1a] via-[#1b1230] to-[#0e0e1a]"
       style={{
-        background: "#10101a",
         fontFamily: "'Century Gothic', 'Futura', 'Arial', sans-serif",
         color: "#fff",
       }}
@@ -152,7 +151,9 @@ export default function Navbar() {
           <div className="md:hidden flex items-center">
             <button
               onClick={() => setMenuOpen((open) => !open)}
-              className="relative inline-flex items-center justify-center h-10 w-10 rounded-xl bg-white/10 hover:bg-white/20 text-white/90 ring-1 ring-white/10 shadow-lg backdrop-blur-md transition-colors"
+              className={`relative inline-flex items-center justify-center h-10 w-10 rounded-xl text-white/90 ring-1 ring-white/15 shadow-[0_8px_30px_rgba(0,0,0,0.35)] backdrop-blur-md transition-all duration-300
+                bg-gradient-to-br from-white/10 to-white/5 hover:from-indigo-500/20 hover:to-fuchsia-500/20
+                ${menuOpen ? 'shadow-[0_0_25px_rgba(168,85,247,0.45)] scale-105' : ''}`}
               aria-label="Toggle menu"
             >
               <svg
@@ -184,9 +185,9 @@ export default function Navbar() {
       />
       {/* Drawer */}
       <div
-        className={`md:hidden fixed top-0 right-0 h-full w-[30vw] min-w-[260px] max-w-sm z-50 transform transition-transform duration-300 ease-in-out ${
+        className={`md:hidden fixed top-0 right-0 h-full w-[30vw] min-w-[280px] max-w-sm z-50 transform transition-transform duration-300 ease-in-out ${
           menuOpen ? "translate-x-0" : "translate-x-full"
-        } bg-slate-900/70 backdrop-blur-lg border-l border-white/10 text-gray-100 shadow-2xl`}
+        } bg-gradient-to-b from-[#10101a]/95 via-[#140f24]/95 to-[#10101a]/95 backdrop-blur-xl border-l border-white/10 text-gray-100 shadow-2xl overflow-y-auto no-scrollbar`}
       >
         <div className="px-4 py-5 space-y-4">
           <SignedIn>
@@ -209,10 +210,10 @@ export default function Navbar() {
                 key={link.name}
                 to={link.to}
                 onClick={(e) => onNavClick(e, link.to)}
-                className={`block px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                className={`block px-3 py-2 rounded-md text-sm font-medium transition-all duration-300 ${
                   isActive(link.to)
-                    ? "bg-gray-800 text-white"
-                    : "text-gray-200 hover:bg-gray-700 hover:text-white"
+                    ? "bg-white/10 text-white ring-1 ring-white/15"
+                    : "text-gray-200 hover:text-white hover:bg-gradient-to-r hover:from-indigo-600/30 hover:to-fuchsia-600/30 hover:shadow-[0_0_20px_rgba(147,51,234,0.35)]"
                 }`}
               >
                 {link.name}

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import axios from "axios";
+import { useUser } from "@clerk/clerk-react";
 import homepageBg from "../assets/homepage[2].png";
 import Particles from "../components/Particles";
 
@@ -12,11 +13,15 @@ const DOC_OPTIONS = [
 ];
 
 export default function Dashboard({ withBackground = true, compact = false }) {
+  const { user } = useUser();
   const [query, setQuery] = useState("");
   const [selectedDocs, setSelectedDocs] = useState([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [messages, setMessages] = useState([]); // {role:'user'|'assistant', content:string}
   const [loading, setLoading] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [historyLimit, setHistoryLimit] = useState(20);
+  const [lastHistoryCount, setLastHistoryCount] = useState(0);
   const barRef = useRef(null);
   const chatRef = useRef(null);
 
@@ -56,7 +61,15 @@ export default function Dashboard({ withBackground = true, compact = false }) {
       : trimmed;
 
     try {
-      const res = await axios.post("/run", { query: fullQuery });
+      const res = await axios.post(
+        "/run",
+        {
+          query: fullQuery,
+          user_id: user?.id || null,
+          user_email: user?.primaryEmailAddress?.emailAddress || null,
+        },
+        { timeout: 15000 }
+      );
       const { decision, amount, justification } = res.data || {};
       const parts = [];
       if (decision) parts.push(`Decision: ${decision}`);
@@ -66,15 +79,98 @@ export default function Dashboard({ withBackground = true, compact = false }) {
       setMessages((m) => [...m, { role: "assistant", content: assistantText }]);
       scrollChatToBottom();
     } catch (err) {
-      setMessages((m) => [
-        ...m,
-        { role: "assistant", content: "Sorry, something went wrong while fetching the answer." },
-      ]);
+      const isTimeout = err?.code === "ECONNABORTED";
+      const msg = isTimeout
+        ? "The request timed out. Please try again."
+        : "Sorry, something went wrong while fetching the answer.";
+      setMessages((m) => [...m, { role: "assistant", content: msg }]);
       scrollChatToBottom();
     } finally {
       setLoading(false);
     }
   };
+
+  // --- History loading into chat ---
+  useEffect(() => {
+    const loadInitialHistory = async () => {
+      if (!user?.id) return;
+      try {
+        setLoadingHistory(true);
+        const res = await axios.get(`/history/${encodeURIComponent(user.id)}`, {
+          params: { limit: historyLimit },
+          timeout: 15000,
+        });
+        const items = res.data?.items || [];
+        const chronological = [...items].reverse();
+        const historyMessages = [];
+        chronological.forEach((it) => {
+          historyMessages.push({ role: "user", content: it.query || "" });
+          const parts = [];
+          if (it.decision) parts.push(`Decision: ${it.decision}`);
+          if (it.amount) parts.push(`Amount: ${it.amount}`);
+          if (it.justification) parts.push(`Justification: ${it.justification}`);
+          historyMessages.push({ role: "assistant", content: parts.join("\n\n") || "No answer available." });
+        });
+        setMessages(historyMessages);
+        setLastHistoryCount(items.length);
+        // After setting, scroll to bottom to see latest
+        requestAnimationFrame(() => {
+          if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
+        });
+      } catch (err) {
+        // Ignore history load errors silently
+      } finally {
+        setLoadingHistory(false);
+      }
+    };
+    loadInitialHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  // Infinite-like loading when scrolled to top: increase limit and refetch
+  useEffect(() => {
+    const el = chatRef.current;
+    if (!el) return;
+    const onScrollTop = async () => {
+      if (loading || loadingHistory) return;
+      if (el.scrollTop <= 10 && user?.id) {
+        try {
+          setLoadingHistory(true);
+          const nextLimit = historyLimit + 20;
+          const res = await axios.get(`/history/${encodeURIComponent(user.id)}`, {
+            params: { limit: nextLimit },
+            timeout: 15000,
+          });
+          const items = res.data?.items || [];
+          if (items.length > lastHistoryCount) {
+            const chronological = [...items].reverse();
+            const historyMessages = [];
+            chronological.forEach((it) => {
+              historyMessages.push({ role: "user", content: it.query || "" });
+              const parts = [];
+              if (it.decision) parts.push(`Decision: ${it.decision}`);
+              if (it.amount) parts.push(`Amount: ${it.amount}`);
+              if (it.justification) parts.push(`Justification: ${it.justification}`);
+              historyMessages.push({ role: "assistant", content: parts.join("\n\n") || "No answer available." });
+            });
+            setMessages(historyMessages);
+            setHistoryLimit(nextLimit);
+            setLastHistoryCount(items.length);
+            // Keep near top after loading more
+            requestAnimationFrame(() => {
+              if (chatRef.current) chatRef.current.scrollTop = 20;
+            });
+          }
+        } catch (err) {
+          // ignore
+        } finally {
+          setLoadingHistory(false);
+        }
+      }
+    };
+    el.addEventListener("scroll", onScrollTop);
+    return () => el.removeEventListener("scroll", onScrollTop);
+  }, [chatRef, user?.id, historyLimit, lastHistoryCount, loading, loadingHistory]);
 
   useEffect(() => {
     const onClickAway = (e) => {
@@ -91,7 +187,7 @@ export default function Dashboard({ withBackground = true, compact = false }) {
 
   const chatBoxClasses = compact
     ? "flex-1 min-h-[36vh] md:min-h-[44vh] max-h-[calc(100vh-260px)]"
-    : "flex-1 min-h-[36vh] max-h-[calc(100vh-260px)]";
+    : "flex-1 min-h-[50vh] lg:min-h-[60vh] max-h-[calc(100vh-260px)]";
 
   return (
     <section id="dashboard" className={`relative ${compact ? "" : "min-h-[calc(100vh-4rem)]"} ${withBackground ? "pt-16" : ""}`}>
@@ -110,7 +206,7 @@ export default function Dashboard({ withBackground = true, compact = false }) {
         {/* Chat output area */}
         <div
           ref={chatRef}
-          className={`${chatBoxClasses} w-full mx-auto max-w-3xl overflow-y-auto rounded-2xl border border-white/15 bg-white/5 backdrop-blur-sm p-4 shadow-inner`}
+          className={`${chatBoxClasses} w-full mx-auto max-w-3xl overflow-y-auto no-scrollbar rounded-2xl border border-white/15 bg-white/5 backdrop-blur-sm p-4 shadow-inner`}
         >
           {messages.length === 0 && (
             <div className="text-center text-white/60 text-sm">Your answers will appear here.</div>
@@ -139,7 +235,7 @@ export default function Dashboard({ withBackground = true, compact = false }) {
         </div>
 
         {/* Search Bar */}
-        <div ref={barRef} className="w-[92vw] sm:w-[84vw] md:w-[70vw] lg:w-[720px] xl:w-[820px] mx-auto mb-20 md:mb-28">
+        <div ref={barRef} className="w-[92vw] sm:w-[84vw] md:w-[76vw] lg:w-[880px] xl:w-[1080px] mx-auto mb-20 md:mb-28">
           {selectedDocs.length > 0 && (
             <div className="mb-2 flex flex-wrap gap-2 text-xs text-white/80">
               {selectedDocs.map((value) => {

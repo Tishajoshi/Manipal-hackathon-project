@@ -14,6 +14,11 @@ PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 PINECONE_INDEX = os.getenv("PINECONE_INDEX", "policy-index-1536")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_EMBED_MODEL = os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-small")
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL")
+USE_LOCAL_EMBEDDINGS = os.getenv("USE_LOCAL_EMBEDDINGS", "false").lower() == "true"
+
+# Embedding dimensionality for text-embedding-3-small
+EMBED_DIM = 1536
 
 # --- Initialize Pinecone ---
 pc = Pinecone(api_key=PINECONE_API_KEY)
@@ -21,20 +26,48 @@ pc = Pinecone(api_key=PINECONE_API_KEY)
 if PINECONE_INDEX not in pc.list_indexes().names():
     pc.create_index(
         name=PINECONE_INDEX,
-        dimension=384,
+        dimension=EMBED_DIM,
         metric='cosine',
         spec=ServerlessSpec(cloud='aws', region='us-east-1')
     )
 
 index = pc.Index(PINECONE_INDEX)
 
-# --- Embeddings via OpenAI (smaller memory footprint) ---
-EMBED_DIM = 1536
-client = OpenAI(api_key=OPENAI_API_KEY)
+# --- Embeddings (OpenAI with local fallback) ---
+client = OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL) if OPENAI_API_KEY else None
+_sentence_model = None
+
+def _get_sentence_model():
+    global _sentence_model
+    if _sentence_model is None:
+        try:
+            from sentence_transformers import SentenceTransformer
+        except Exception as e:
+            raise RuntimeError("sentence-transformers is required for local embeddings; run 'pip install -r requirements.txt'") from e
+        _sentence_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+    return _sentence_model
+
+def _expand_to_dim(vector, target_dim: int):
+    # Pad with zeros or truncate to fit target_dim
+    if len(vector) == target_dim:
+        return vector
+    if len(vector) > target_dim:
+        return vector[:target_dim]
+    return vector + [0.0] * (target_dim - len(vector))
 
 def embed_text(text: str) -> list:
-    resp = client.embeddings.create(model=OPENAI_EMBED_MODEL, input=text)
-    return resp.data[0].embedding
+    use_local = USE_LOCAL_EMBEDDINGS or not OPENAI_API_KEY
+    if not use_local and client is not None:
+        try:
+            resp = client.embeddings.create(model=OPENAI_EMBED_MODEL, input=text)
+            return resp.data[0].embedding
+        except Exception as e:
+            # Fallback to local model on quota/any error
+            print("⚠️ OpenAI embedding failed; falling back to local model:", e)
+    # Local fallback
+    model = _get_sentence_model()
+    local_vec = model.encode(text).tolist()
+    return _expand_to_dim(local_vec, EMBED_DIM)
 
 # --- Utility functions ---
 def extract_text_from_pdf(pdf_path):
@@ -79,5 +112,10 @@ for file in pdf_files:
             "metadata": {"source": file, "text": chunk}
         })
 
-    index.upsert(vectors=vectors)
+    # Upsert in small batches to avoid 4MB request limit
+    batch_size = 50
+    total = len(vectors)
+    for start in range(0, total, batch_size):
+        end = min(start + batch_size, total)
+        index.upsert(vectors=vectors[start:end])
     print(f"✅ Uploaded {len(vectors)} chunks from {file}")

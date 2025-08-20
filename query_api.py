@@ -9,6 +9,9 @@ import os
 from dotenv import load_dotenv
 import re
 from typing import Optional, List, Dict, Any
+import asyncio
+from datetime import datetime
+from motor.motor_asyncio import AsyncIOMotorClient
 
 load_dotenv()  # Load keys from .env file
 
@@ -18,8 +21,12 @@ PINECONE_INDEX = os.getenv("PINECONE_INDEX", "policy-index-1536")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_EMBED_MODEL = os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-small")
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL")
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai").lower()  # 'openai' or 'none'
+USE_LOCAL_EMBEDDINGS = os.getenv("USE_LOCAL_EMBEDDINGS", "false").lower() == "true"
+MONGO_URI = os.getenv("MONGO_URI")
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+client = OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL, timeout=10.0) if OPENAI_API_KEY else None
 
 # Basic runtime diagnostics (do not print the key itself)
 if not OPENAI_API_KEY or len(OPENAI_API_KEY.strip()) == 0:
@@ -48,14 +55,46 @@ async def ping():
     print("✅ Pinged FastAPI")
     return {"message": "pong"}
 
-# --- Embeddings ---
-# To fit within low-memory hosts (e.g., Render free tier), we use
-# OpenAI's hosted embeddings instead of loading a local transformer.
+# --- Embeddings (OpenAI with local fallback) ---
 EMBED_DIM = 1536  # text-embedding-3-small
+_sentence_model = None
+
+def _get_sentence_model():
+    global _sentence_model
+    if _sentence_model is None:
+        try:
+            from sentence_transformers import SentenceTransformer
+        except Exception as e:
+            raise RuntimeError("sentence-transformers is required for local embeddings; run 'pip install -r requirements.txt'") from e
+        _sentence_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+    return _sentence_model
+
+def _expand_to_dim(vector, target_dim: int):
+    if len(vector) == target_dim:
+        return vector
+    if len(vector) > target_dim:
+        return vector[:target_dim]
+    return vector + [0.0] * (target_dim - len(vector))
+
+# Preload local embedding model to avoid first-request delay
+if USE_LOCAL_EMBEDDINGS and _sentence_model is None:
+    try:
+        _get_sentence_model()
+        print("✅ Local embedding model loaded")
+    except Exception as e:
+        print("⚠️ Failed to preload local embedding model:", e)
 
 def embed_text(text: str) -> list:
-    resp = client.embeddings.create(model=OPENAI_EMBED_MODEL, input=text)
-    return resp.data[0].embedding
+    use_local = USE_LOCAL_EMBEDDINGS or not OPENAI_API_KEY
+    if not use_local and client is not None:
+        try:
+            resp = client.embeddings.create(model=OPENAI_EMBED_MODEL, input=text)
+            return resp.data[0].embedding
+        except Exception as e:
+            print("⚠️ OpenAI embedding failed; falling back to local model:", e)
+    model = _get_sentence_model()
+    local_vec = model.encode(text).tolist()
+    return _expand_to_dim(local_vec, EMBED_DIM)
 
 # Connect to Pinecone
 pc = Pinecone(api_key=PINECONE_API_KEY)
@@ -67,6 +106,21 @@ if PINECONE_INDEX not in pc.list_indexes().names():
         spec=ServerlessSpec(cloud='aws', region='us-east-1')
     )
 index = pc.Index(PINECONE_INDEX)
+
+"""-------------------- MongoDB (users + history) --------------------"""
+mongo_client: Optional[AsyncIOMotorClient] = None
+history_collection = None
+users_collection = None
+
+if MONGO_URI:
+    try:
+        mongo_client = AsyncIOMotorClient(MONGO_URI)
+        db = mongo_client.get_database("bajaj_app")
+        history_collection = db.get_collection("search_history")
+        users_collection = db.get_collection("users")
+        print("✅ Connected to MongoDB (collections: users, search_history)")
+    except Exception as e:
+        print("⚠️ Mongo connection failed:", e)
 
 
 def extract_json_object_from_text(text: str) -> Optional[Dict[str, Any]]:
@@ -102,36 +156,36 @@ def extract_json_object_from_text(text: str) -> Optional[Dict[str, Any]]:
 
 
 def get_candidate_models(primary_model: str) -> List[str]:
-    """Return an ordered list of models to try, preferring a reliable small model first."""
-    candidates: List[str] = []
-    # Prefer 4o-mini first for broad availability and cost
-    candidates.append("gpt-4o-mini")
+    """Return a single preferred model to keep latency predictable."""
     normalized = (primary_model or "").strip()
-    if normalized and normalized not in candidates:
-        candidates.append(normalized)
-    # Include a legacy/chat model fallback
-    if "gpt-3.5-turbo" not in candidates:
-        candidates.append("gpt-3.5-turbo")
-    return candidates
+    return [normalized or "gpt-4o-mini"]
 
 
-def call_openai_for_json(messages: List[Dict[str, str]], models_to_try: List[str]) -> Dict[str, Any]:
-    """Call OpenAI ChatCompletion across a list of models until one succeeds.
+async def call_openai_for_json(messages: List[Dict[str, str]], models_to_try: List[str]) -> Dict[str, Any]:
+    """Call LLM for structured JSON. Supports disabling LLM usage via LLM_PROVIDER=none."""
+    if LLM_PROVIDER == "none":
+        return {
+            "decision": "unknown",
+            "amount": None,
+            "justification": "LLM disabled. Retrieved relevant clauses and prepared summary context, but cannot generate a decision without an LLM.",
+        }
 
-    Returns the parsed JSON dict.
-    Raises the last exception if all attempts fail.
-    """
+    if client is None:
+        raise RuntimeError("OPENAI_API_KEY missing and LLM_PROVIDER is not 'none'. Set a key or set LLM_PROVIDER=none")
+
     last_error: Optional[Exception] = None
     for model_name in models_to_try:
         try:
             print(f"🧠 Calling OpenAI model: {model_name}")
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=messages,
-                temperature=0.2,
-            )
+            def _call():
+                return client.chat.completions.create(
+                    model=model_name,
+                    messages=messages,
+                    temperature=0.2,
+                    timeout=10.0,
+                )
+            response = await asyncio.wait_for(asyncio.to_thread(_call), timeout=12.0)
             content = response.choices[0].message.content
-            print("🔁 Raw model content:", content)
             parsed = extract_json_object_from_text(content)
             if parsed is None:
                 raise ValueError("Model returned non-JSON content")
@@ -145,6 +199,8 @@ def call_openai_for_json(messages: List[Dict[str, str]], models_to_try: List[str
 
 class Query(BaseModel):
     query: str
+    user_id: Optional[str] = None
+    user_email: Optional[str] = None
 
 @app.post("/run")
 async def run_query(data: Query):
@@ -153,7 +209,7 @@ async def run_query(data: Query):
 
     # Step 1: Generate query embedding
     try:
-        query_vector = embed_text(data.query)
+        query_vector = await asyncio.wait_for(asyncio.to_thread(embed_text, data.query), timeout=8.0)
         print("✅ Query embedding created")
     except Exception as e:
         print("❌ Embedding failed:", e)
@@ -161,7 +217,9 @@ async def run_query(data: Query):
 
     # Step 2: Query Pinecone
     try:
-        pinecone_res = index.query(vector=query_vector, top_k=5, include_metadata=True)
+        def _q():
+            return index.query(vector=query_vector, top_k=3, include_metadata=True)
+        pinecone_res = await asyncio.wait_for(asyncio.to_thread(_q), timeout=6.0)
         matches = pinecone_res.get('matches', [])
         print(f"🔍 Pinecone matches: {len(matches)}")
     except Exception as e:
@@ -192,7 +250,24 @@ async def run_query(data: Query):
             {"role": "user", "content": user_msg},
         ]
         candidate_models = get_candidate_models(PRIMARY_OPENAI_MODEL)
-        parsed = call_openai_for_json(messages, candidate_models)
+        parsed = await call_openai_for_json(messages, candidate_models)
+
+        # Save history if Mongo is available
+        try:
+            if history_collection is not None:
+                doc = {
+                    "user_id": data.user_id,
+                    "user_email": data.user_email,
+                    "query": data.query,
+                    "decision": parsed.get("decision"),
+                    "amount": parsed.get("amount"),
+                    "justification": parsed.get("justification"),
+                    "created_at": datetime.utcnow(),
+                }
+                await history_collection.insert_one(doc)
+        except Exception as e:
+            print("⚠️ Failed to write history:", e)
+
         return {
             "decision": parsed.get("decision"),
             "amount": parsed.get("amount"),
@@ -205,3 +280,15 @@ async def run_query(data: Query):
             "amount": None,
             "justification": "GPT processing failed"
         }
+
+
+@app.get("/history/{user_id}")
+async def get_history(user_id: str, limit: int = 20):
+    if history_collection is None:
+        raise HTTPException(status_code=503, detail="History store not configured")
+    cursor = history_collection.find({"user_id": user_id}).sort("created_at", -1).limit(limit)
+    items: List[Dict[str, Any]] = []
+    async for item in cursor:
+        item.pop("_id", None)
+        items.append(item)
+    return {"items": items}

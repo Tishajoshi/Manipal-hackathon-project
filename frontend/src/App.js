@@ -10,6 +10,7 @@ import Settings from './pages/Settings';
 import About from './pages/About';
 import HowToUse from './pages/HowToUse';
 import Feature from './pages/Feature';
+import Footer from './components/Footer.jsx';
 
 export default function App() {
   return (
@@ -46,6 +47,7 @@ export default function App() {
           }
         />
       </Routes>
+      <Footer />
     </Router>
   );
 }

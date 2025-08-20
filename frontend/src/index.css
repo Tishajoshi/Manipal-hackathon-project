@@ -13,4 +13,12 @@ html {
   .backdrop-blur-lg {
     -webkit-backdrop-filter: blur(16px);
   }
+  /* Hide scrollbars cross-browser */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none; /* IE and Edge */
+    scrollbar-width: none; /* Firefox */
+  }
 }

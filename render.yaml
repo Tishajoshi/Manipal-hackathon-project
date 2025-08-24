@@ -2,10 +2,13 @@ services:
   - type: web
     name: bajaj-insurance-api
     env: python
-    runtime: python-3.11.8
+    region: oregon
+    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn query_api:app --host 0.0.0.0 --port $PORT
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.8"
       - key: OPENAI_API_KEY
         sync: false
       - key: PINECONE_API_KEY

@@ -90,14 +90,17 @@ def _expand_to_dim(vector, target_dim: int):
         return vector[:target_dim]
     return vector + [0.0] * (target_dim - len(vector))
 
-# Preload local embedding model to avoid first-request delay
-print("🔄 Loading local embedding model (this may take 10-30 seconds on first run)...")
-try:
-    _get_sentence_model()
-    print("✅ Local embedding model preloaded successfully!")
-except Exception as e:
-    print("⚠️ Failed to preload local embedding model:", e)
-    print("💡 The model will load on first request (slower)")
+# Preload local embedding model only if enabled
+if USE_LOCAL_EMBEDDINGS:
+    print("🔄 Loading local embedding model (this may take 10-30 seconds on first run)...")
+    try:
+        _get_sentence_model()
+        print("✅ Local embedding model preloaded successfully!")
+    except Exception as e:
+        print("⚠️ Failed to preload local embedding model:", e)
+        print("💡 The model will load on first request (slower)")
+else:
+    print("✅ Local embeddings disabled - using OpenAI embeddings only")
 
 def embed_text(text: str) -> list:
     use_local = USE_LOCAL_EMBEDDINGS or not OPENAI_API_KEY

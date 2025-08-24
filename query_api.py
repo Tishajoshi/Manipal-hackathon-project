@@ -91,12 +91,13 @@ def _expand_to_dim(vector, target_dim: int):
     return vector + [0.0] * (target_dim - len(vector))
 
 # Preload local embedding model to avoid first-request delay
-if USE_LOCAL_EMBEDDINGS and _sentence_model is None:
-    try:
-        _get_sentence_model()
-        print("✅ Local embedding model loaded")
-    except Exception as e:
-        print("⚠️ Failed to preload local embedding model:", e)
+print("🔄 Loading local embedding model (this may take 10-30 seconds on first run)...")
+try:
+    _get_sentence_model()
+    print("✅ Local embedding model preloaded successfully!")
+except Exception as e:
+    print("⚠️ Failed to preload local embedding model:", e)
+    print("💡 The model will load on first request (slower)")
 
 def embed_text(text: str) -> list:
     use_local = USE_LOCAL_EMBEDDINGS or not OPENAI_API_KEY
@@ -228,13 +229,17 @@ class Query(BaseModel):
 
 @app.post("/run")
 async def run_query(data: Query):
+    import time
+    start_time = time.time()
     print("🚀 Endpoint hit")
     print(f"📩 Received query: {data.query[:100]}...")
 
     # Step 1: Generate query embedding
     try:
+        embedding_start = time.time()
         query_vector = await asyncio.wait_for(asyncio.to_thread(embed_text, data.query), timeout=8.0)
-        print("✅ Query embedding created")
+        embedding_time = time.time() - embedding_start
+        print(f"✅ Query embedding created in {embedding_time:.2f}s")
     except Exception as e:
         print("❌ Embedding failed:", e)
         return {"decision": None, "amount": None, "justification": "Embedding failed"}
@@ -292,17 +297,22 @@ async def run_query(data: Query):
         except Exception as e:
             print("⚠️ Failed to write history:", e)
 
+        total_time = time.time() - start_time
+        print(f"🎯 Total response time: {total_time:.2f}s")
         return {
             "decision": parsed.get("decision"),
             "amount": parsed.get("amount"),
             "justification": parsed.get("justification"),
+            "response_time": f"{total_time:.2f}s"
         }
     except Exception as e:
-        print("❌ GPT call or JSON parse failed:", e)
+        total_time = time.time() - start_time
+        print(f"❌ GPT call or JSON parse failed in {total_time:.2f}s:", e)
         return {
             "decision": None,
             "amount": None,
-            "justification": "GPT processing failed"
+            "justification": "GPT processing failed",
+            "response_time": f"{total_time:.2f}s"
         }
 
 

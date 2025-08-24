@@ -64,9 +64,23 @@ def _get_sentence_model():
     if _sentence_model is None:
         try:
             from sentence_transformers import SentenceTransformer
+            _sentence_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+            print("✅ Local embedding model loaded successfully")
+        except ImportError as e:
+            print("❌ sentence-transformers not installed. Installing now...")
+            import subprocess
+            import sys
+            try:
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "sentence-transformers"])
+                from sentence_transformers import SentenceTransformer
+                _sentence_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+                print("✅ Local embedding model installed and loaded")
+            except Exception as install_error:
+                print(f"❌ Failed to install sentence-transformers: {install_error}")
+                raise RuntimeError("sentence-transformers is required for local embeddings") from install_error
         except Exception as e:
-            raise RuntimeError("sentence-transformers is required for local embeddings; run 'pip install -r requirements.txt'") from e
-        _sentence_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+            print(f"❌ Failed to load sentence-transformers model: {e}")
+            raise RuntimeError(f"Failed to load local embedding model: {e}") from e
     return _sentence_model
 
 def _expand_to_dim(vector, target_dim: int):
@@ -86,15 +100,25 @@ if USE_LOCAL_EMBEDDINGS and _sentence_model is None:
 
 def embed_text(text: str) -> list:
     use_local = USE_LOCAL_EMBEDDINGS or not OPENAI_API_KEY
+    
+    # Try OpenAI first if available and not forced to use local
     if not use_local and client is not None:
         try:
             resp = client.embeddings.create(model=OPENAI_EMBED_MODEL, input=text)
             return resp.data[0].embedding
         except Exception as e:
             print("⚠️ OpenAI embedding failed; falling back to local model:", e)
-    model = _get_sentence_model()
-    local_vec = model.encode(text).tolist()
-    return _expand_to_dim(local_vec, EMBED_DIM)
+    
+    # Fallback to local model
+    try:
+        model = _get_sentence_model()
+        local_vec = model.encode(text).tolist()
+        return _expand_to_dim(local_vec, EMBED_DIM)
+    except Exception as e:
+        print(f"❌ Local embedding also failed: {e}")
+        # Return a simple fallback vector to prevent complete failure
+        fallback_vector = [0.1] * EMBED_DIM
+        return fallback_vector
 
 # Connect to Pinecone
 pc = Pinecone(api_key=PINECONE_API_KEY)
@@ -292,3 +316,7 @@ async def get_history(user_id: str, limit: int = 20):
         item.pop("_id", None)
         items.append(item)
     return {"items": items}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

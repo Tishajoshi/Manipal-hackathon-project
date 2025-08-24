@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import axios from "axios";
 import { useUser } from "@clerk/clerk-react";
 import homepageBg from "../assets/homepage[2].png";
@@ -25,22 +25,22 @@ export default function Dashboard({ withBackground = true, compact = false }) {
   const barRef = useRef(null);
   const chatRef = useRef(null);
 
-  const togglePicker = () => setPickerOpen((o) => !o);
+  const togglePicker = useCallback(() => setPickerOpen((o) => !o), []);
 
-  const toggleDoc = (value) => {
+  const toggleDoc = useCallback((value) => {
     setSelectedDocs((prev) => {
       const exists = prev.includes(value);
       return (exists ? prev.filter((v) => v !== value) : [...prev, value]).slice(0, 5);
     });
-  };
+  }, []);
 
-  const scrollChatToBottom = () => {
+  const scrollChatToBottom = useCallback(() => {
     requestAnimationFrame(() => {
       if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
     });
-  };
+  }, []);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = useCallback(async (e) => {
     e?.preventDefault();
     const trimmed = query.trim();
     if (!trimmed) return;
@@ -88,106 +88,108 @@ export default function Dashboard({ withBackground = true, compact = false }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [query, selectedDocs, user?.id, user?.primaryEmailAddress?.emailAddress, scrollChatToBottom]);
 
   // --- History loading into chat ---
+  const loadInitialHistory = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      setLoadingHistory(true);
+      const res = await axios.get(`/history/${encodeURIComponent(user.id)}`, {
+        params: { limit: historyLimit },
+        timeout: 15000,
+      });
+      const items = res.data?.items || [];
+      const chronological = [...items].reverse();
+      const historyMessages = [];
+      chronological.forEach((it) => {
+        historyMessages.push({ role: "user", content: it.query || "" });
+        const parts = [];
+        if (it.decision) parts.push(`Decision: ${it.decision}`);
+        if (it.amount) parts.push(`Amount: ${it.amount}`);
+        if (it.justification) parts.push(`Justification: ${it.justification}`);
+        historyMessages.push({ role: "assistant", content: parts.join("\n\n") || "No answer available." });
+      });
+      setMessages(historyMessages);
+      setLastHistoryCount(items.length);
+      // After setting, scroll to bottom to see latest
+      requestAnimationFrame(() => {
+        if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
+      });
+    } catch (err) {
+      // Ignore history load errors silently
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, [user?.id, historyLimit]);
+
   useEffect(() => {
-    const loadInitialHistory = async () => {
-      if (!user?.id) return;
+    loadInitialHistory();
+  }, [loadInitialHistory]);
+
+  // Infinite-like loading when scrolled to top: increase limit and refetch
+  const onScrollTop = useCallback(async () => {
+    if (loading || loadingHistory) return;
+    if (chatRef.current?.scrollTop <= 10 && user?.id) {
       try {
         setLoadingHistory(true);
+        const nextLimit = historyLimit + 20;
         const res = await axios.get(`/history/${encodeURIComponent(user.id)}`, {
-          params: { limit: historyLimit },
+          params: { limit: nextLimit },
           timeout: 15000,
         });
         const items = res.data?.items || [];
-        const chronological = [...items].reverse();
-        const historyMessages = [];
-        chronological.forEach((it) => {
-          historyMessages.push({ role: "user", content: it.query || "" });
-          const parts = [];
-          if (it.decision) parts.push(`Decision: ${it.decision}`);
-          if (it.amount) parts.push(`Amount: ${it.amount}`);
-          if (it.justification) parts.push(`Justification: ${it.justification}`);
-          historyMessages.push({ role: "assistant", content: parts.join("\n\n") || "No answer available." });
-        });
-        setMessages(historyMessages);
-        setLastHistoryCount(items.length);
-        // After setting, scroll to bottom to see latest
-        requestAnimationFrame(() => {
-          if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
-        });
+        if (items.length > lastHistoryCount) {
+          const chronological = [...items].reverse();
+          const historyMessages = [];
+          chronological.forEach((it) => {
+            historyMessages.push({ role: "user", content: it.query || "" });
+            const parts = [];
+            if (it.decision) parts.push(`Decision: ${it.decision}`);
+            if (it.amount) parts.push(`Amount: ${it.amount}`);
+            if (it.justification) parts.push(`Justification: ${it.justification}`);
+            historyMessages.push({ role: "assistant", content: parts.join("\n\n") || "No answer available." });
+          });
+          setMessages(historyMessages);
+          setHistoryLimit(nextLimit);
+          setLastHistoryCount(items.length);
+          // Keep near top after loading more
+          requestAnimationFrame(() => {
+            if (chatRef.current) chatRef.current.scrollTop = 20;
+          });
+        }
       } catch (err) {
-        // Ignore history load errors silently
+        // ignore
       } finally {
         setLoadingHistory(false);
       }
-    };
-    loadInitialHistory();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
+    }
+  }, [loading, loadingHistory, user?.id, historyLimit, lastHistoryCount]);
 
-  // Infinite-like loading when scrolled to top: increase limit and refetch
   useEffect(() => {
     const el = chatRef.current;
     if (!el) return;
-    const onScrollTop = async () => {
-      if (loading || loadingHistory) return;
-      if (el.scrollTop <= 10 && user?.id) {
-        try {
-          setLoadingHistory(true);
-          const nextLimit = historyLimit + 20;
-          const res = await axios.get(`/history/${encodeURIComponent(user.id)}`, {
-            params: { limit: nextLimit },
-            timeout: 15000,
-          });
-          const items = res.data?.items || [];
-          if (items.length > lastHistoryCount) {
-            const chronological = [...items].reverse();
-            const historyMessages = [];
-            chronological.forEach((it) => {
-              historyMessages.push({ role: "user", content: it.query || "" });
-              const parts = [];
-              if (it.decision) parts.push(`Decision: ${it.decision}`);
-              if (it.amount) parts.push(`Amount: ${it.amount}`);
-              if (it.justification) parts.push(`Justification: ${it.justification}`);
-              historyMessages.push({ role: "assistant", content: parts.join("\n\n") || "No answer available." });
-            });
-            setMessages(historyMessages);
-            setHistoryLimit(nextLimit);
-            setLastHistoryCount(items.length);
-            // Keep near top after loading more
-            requestAnimationFrame(() => {
-              if (chatRef.current) chatRef.current.scrollTop = 20;
-            });
-          }
-        } catch (err) {
-          // ignore
-        } finally {
-          setLoadingHistory(false);
-        }
-      }
-    };
     el.addEventListener("scroll", onScrollTop);
     return () => el.removeEventListener("scroll", onScrollTop);
-  }, [chatRef, user?.id, historyLimit, lastHistoryCount, loading, loadingHistory]);
+  }, [onScrollTop]);
 
-  useEffect(() => {
-    const onClickAway = (e) => {
-      if (!barRef.current) return;
-      if (!barRef.current.contains(e.target)) setPickerOpen(false);
-    };
-    document.addEventListener("mousedown", onClickAway);
-    return () => document.removeEventListener("mousedown", onClickAway);
+  const onClickAway = useCallback((e) => {
+    if (!barRef.current) return;
+    if (!barRef.current.contains(e.target)) setPickerOpen(false);
   }, []);
 
-  const wrapperClasses = compact
-    ? "relative w-full flex flex-col gap-4 justify-between px-4 py-14 min-h[60vh] md:min-h-[calc(100vh-4rem)]"
-    : "relative min-h-[calc(100vh-4rem)] flex flex-col gap-4 justify-end px-4 pb-24";
+  useEffect(() => {
+    document.addEventListener("mousedown", onClickAway);
+    return () => document.removeEventListener("mousedown", onClickAway);
+  }, [onClickAway]);
 
-  const chatBoxClasses = compact
+  const wrapperClasses = useMemo(() => compact
+    ? "relative w-full flex flex-col gap-4 justify-between px-4 py-14 min-h[60vh] md:min-h-[calc(100vh-4rem)]"
+    : "relative min-h-[calc(100vh-4rem)] flex flex-col gap-4 justify-end px-4 pb-24", [compact]);
+
+  const chatBoxClasses = useMemo(() => compact
     ? "flex-1 min-h-[36vh] md:min-h-[44vh] max-h-[calc(100vh-260px)]"
-    : "flex-1 min-h-[50vh] lg:min-h-[60vh] max-h-[calc(100vh-260px)]";
+    : "flex-1 min-h-[50vh] lg:min-h-[60vh] max-h-[calc(100vh-260px)]", [compact]);
 
   return (
     <section id="dashboard" className={`relative ${compact ? "" : "min-h-[calc(100vh-4rem)]"} ${withBackground ? "pt-16" : ""}`}>
@@ -206,7 +208,7 @@ export default function Dashboard({ withBackground = true, compact = false }) {
         {/* Chat output area */}
         <div
           ref={chatRef}
-          className={`${chatBoxClasses} w-full mx-auto max-w-3xl overflow-y-auto no-scrollbar rounded-2xl border border-white/15 bg-white/5 backdrop-blur-sm p-4 shadow-inner`}
+          className={`${chatBoxClasses} chat-container w-full mx-auto max-w-3xl overflow-y-auto no-scrollbar rounded-2xl border border-white/15 bg-white/5 backdrop-blur-sm p-4 shadow-inner`}
         >
           {messages.length === 0 && (
             <div className="text-center text-white/60 text-sm">Your answers will appear here.</div>

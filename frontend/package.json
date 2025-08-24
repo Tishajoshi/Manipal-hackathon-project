@@ -42,7 +42,7 @@
       "last 1 safari version"
     ]
   },
-  "proxy": "http://localhost:8000",
+  "proxy": "https://your-render-backend-url.onrender.com",
   "devDependencies": {
     "autoprefixer": "10.4.16",
     "postcss": "8.4.38",

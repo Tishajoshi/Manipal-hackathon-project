@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: bajaj-insurance-api
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn query_api:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9.16
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: PINECONE_API_KEY
+        sync: false
+      - key: MONGO_URI
+        sync: false
+      - key: PINECONE_INDEX
+        value: policy-index-1536
+      - key: USE_LOCAL_EMBEDDINGS
+        value: false

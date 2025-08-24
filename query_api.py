@@ -11,7 +11,14 @@ import re
 from typing import Optional, List, Dict, Any
 import asyncio
 from datetime import datetime
-from motor.motor_asyncio import AsyncIOMotorClient
+# Optional MongoDB import
+try:
+    from motor.motor_asyncio import AsyncIOMotorClient
+    MOTOR_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Motor/MongoDB not available: {e}")
+    AsyncIOMotorClient = None
+    MOTOR_AVAILABLE = False
 
 load_dotenv()  # Load keys from .env file
 
@@ -140,11 +147,11 @@ if PINECONE_INDEX not in pc.list_indexes().names():
 index = pc.Index(PINECONE_INDEX)
 
 """-------------------- MongoDB (users + history) --------------------"""
-mongo_client: Optional[AsyncIOMotorClient] = None
+mongo_client = None
 history_collection = None
 users_collection = None
 
-if MONGO_URI:
+if MONGO_URI and MOTOR_AVAILABLE and AsyncIOMotorClient:
     try:
         mongo_client = AsyncIOMotorClient(MONGO_URI)
         db = mongo_client.get_database("bajaj_app")
@@ -153,6 +160,10 @@ if MONGO_URI:
         print("✅ Connected to MongoDB (collections: users, search_history)")
     except Exception as e:
         print("⚠️ Mongo connection failed:", e)
+elif not MOTOR_AVAILABLE:
+    print("⚠️ MongoDB disabled - Motor not available")
+else:
+    print("⚠️ MongoDB disabled - no MONGO_URI provided")
 
 
 def extract_json_object_from_text(text: str) -> Optional[Dict[str, Any]]:

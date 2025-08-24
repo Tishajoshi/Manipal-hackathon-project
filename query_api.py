@@ -49,7 +49,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- HEALTH CHECK ROUTE ---
+# --- HEALTH CHECK ROUTES ---
+@app.get("/")
+async def root():
+    return {"message": "Bajaj Insurance API is running!", "timestamp": datetime.now().isoformat(), "version": "1.0.0"}
+
 @app.get("/ping")
 async def ping():
     print("✅ Pinged FastAPI")

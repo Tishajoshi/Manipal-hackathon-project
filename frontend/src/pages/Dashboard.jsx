@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import axios from "axios";
-import { useUser } from "@clerk/clerk-react";
+import { getCurrentUser } from "../utils/authService";
 import homepageBg from "../assets/homepage[2].png";
 import Particles from "../components/Particles";
 
@@ -13,7 +13,7 @@ const DOC_OPTIONS = [
 ];
 
 export default function Dashboard({ withBackground = true, compact = false }) {
-  const { user } = useUser();
+  const user = getCurrentUser();
   const [query, setQuery] = useState("");
   const [selectedDocs, setSelectedDocs] = useState([]);
   const [pickerOpen, setPickerOpen] = useState(false);

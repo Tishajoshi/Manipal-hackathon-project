@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { SignedIn, SignedOut, useUser, UserButton } from "@clerk/clerk-react";
+import { isAuthenticated, getCurrentUser } from "../utils/authService";
 import logojpg from "../assets/logo.jpg";
 
 export default function Navbar() {
@@ -8,7 +8,8 @@ export default function Navbar() {
   const [activeSection, setActiveSection] = useState(null);
   const location = useLocation();
   const navigate = useNavigate();
-  const { user } = useUser();
+  const authenticated = isAuthenticated();
+  const user = authenticated ? getCurrentUser() : null;
 
   useEffect(() => {
     if (location.pathname !== "/") {
@@ -132,19 +133,20 @@ export default function Navbar() {
                 {link.name}
               </Link>
             ))}
-            <SignedOut>
+            {!authenticated ? (
               <Link
                 to="/signup"
                 className="px-4 py-2 rounded-md text-sm font-medium transition-colors bg-indigo-800 hover:bg-indigo-700 text-white"
               >
                 Sign Up
               </Link>
-            </SignedOut>
-            <SignedIn>
+            ) : (
               <div className="ml-2">
-                <UserButton afterSignOutUrl="/" />
+                <Link to="/profile" className="flex items-center justify-center w-10 h-10 rounded-full bg-indigo-600 text-white">
+                  {user?.name?.charAt(0) || 'U'}
+                </Link>
               </div>
-            </SignedIn>
+            )}
           </div>
 
           {/* Right: Hamburger button (mobile only) */}
@@ -190,55 +192,59 @@ export default function Navbar() {
         } bg-gradient-to-b from-[#10101a]/95 via-[#140f24]/95 to-[#10101a]/95 backdrop-blur-xl border-l border-white/10 text-gray-100 shadow-2xl overflow-y-auto no-scrollbar`}
       >
         <div className="px-4 py-5 space-y-4">
-          <SignedIn>
-            <div className="flex items-center space-x-3">
-              <UserButton appearance={{ elements: { userButtonAvatarBox: "w-10 h-10 border border-white/20" } }} afterSignOutUrl="/" />
-              <div>
-                <div className="text-sm font-semibold">
-                  {user?.fullName || user?.primaryEmailAddress?.emailAddress || "User"}
-                </div>
-                {user?.primaryEmailAddress?.emailAddress && (
-                  <div className="text-xs text-gray-300">
-                    {user.primaryEmailAddress.emailAddress}
+          {authenticated ? (
+            <>
+              <div className="flex items-center space-x-3">
+                <Link to="/profile" className="flex items-center justify-center w-10 h-10 rounded-full bg-indigo-600 text-white">
+                  {user?.name?.charAt(0) || 'U'}
+                </Link>
+                <div>
+                  <div className="text-sm font-semibold">
+                    {user?.name || user?.email || "User"}
                   </div>
-                )}
+                  {user?.email && (
+                    <div className="text-xs text-gray-300">
+                      {user.email}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-            <div className="h-px bg-white/10 my-2" />
-            {desktopNavLinks.map((link) => (
-              <Link
-                key={link.name}
-                to={link.to}
-                onClick={(e) => onNavClick(e, link.to)}
-                className={`block px-3 py-2 rounded-md text-sm font-medium transition-all duration-300 ${
-                  isActive(link.to)
-                    ? "bg-white/10 text-white ring-1 ring-white/15"
-                    : "text-gray-200 hover:text-white hover:bg-gradient-to-r hover:from-indigo-600/30 hover:to-fuchsia-600/30 hover:shadow-[0_0_20px_rgba(147,51,234,0.35)]"
-                }`}
-              >
-                {link.name}
-              </Link>
-            ))}
-          </SignedIn>
-
-          <SignedOut>
-            {mobileItemsSignedOut.map((item) => (
-              <Link
-                key={item.name}
-                to={item.to}
-                onClick={(e) => onNavClick(e, item.to)}
-                className={`${
-                  item.primary
-                    ? "bg-indigo-800 hover:bg-indigo-700 text-white"
-                    : isActive(item.to)
-                    ? "bg-gray-800 text-white"
-                    : "text-gray-200 hover:bg-gray-700 hover:text-white"
-                } block px-3 py-2 rounded-md text-sm font-medium transition-colors`}
-              >
-                {item.name}
-              </Link>
-            ))}
-          </SignedOut>
+              <div className="h-px bg-white/10 my-2" />
+              {desktopNavLinks.map((link) => (
+                <Link
+                  key={link.name}
+                  to={link.to}
+                  onClick={(e) => onNavClick(e, link.to)}
+                  className={`block px-3 py-2 rounded-md text-sm font-medium transition-all duration-300 ${
+                    isActive(link.to)
+                      ? "bg-white/10 text-white ring-1 ring-white/15"
+                      : "text-gray-200 hover:text-white hover:bg-gradient-to-r hover:from-indigo-600/30 hover:to-fuchsia-600/30 hover:shadow-[0_0_20px_rgba(147,51,234,0.35)]"
+                  }`}
+                >
+                  {link.name}
+                </Link>
+              ))}
+            </>
+          ) : (
+            <>
+              {mobileItemsSignedOut.map((item) => (
+                <Link
+                  key={item.name}
+                  to={item.to}
+                  onClick={(e) => onNavClick(e, item.to)}
+                  className={`${
+                    item.primary
+                      ? "bg-indigo-800 hover:bg-indigo-700 text-white"
+                      : isActive(item.to)
+                      ? "bg-gray-800 text-white"
+                      : "text-gray-200 hover:bg-gray-700 hover:text-white"
+                  } block px-3 py-2 rounded-md text-sm font-medium transition-colors`}
+                >
+                  {item.name}
+                </Link>
+              ))}
+            </>
+          )}
         </div>
       </div>
     </nav>

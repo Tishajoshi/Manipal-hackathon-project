@@ -1,11 +1,18 @@
 import React, { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import ThemeToggle from './ThemeToggle';
-import { SignedIn, SignedOut, SignOutButton } from '@clerk/clerk-react';
+import { logout, isAuthenticated } from '../utils/authService';
 
 export default function Sidebar() {
   const [open, setOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
+  const authenticated = isAuthenticated();
+
+  const handleSignOut = () => {
+    logout();
+    navigate('/login');
+  };
 
   const NavLink = ({ to, children }) => (
     <Link
@@ -43,14 +50,16 @@ export default function Sidebar() {
           <NavLink to="/settings">Settings</NavLink>
         </nav>
         <ThemeToggle />
-        <SignedIn>
-          <SignOutButton>
-            <button className="w-full px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700">Sign out</button>
-          </SignOutButton>
-        </SignedIn>
-        <SignedOut>
+        {authenticated ? (
+          <button 
+            onClick={handleSignOut}
+            className="w-full px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700"
+          >
+            Sign out
+          </button>
+        ) : (
           <div className="text-sm text-gray-300">Sign in to access dashboard</div>
-        </SignedOut>
+        )}
       </div>
     </aside>
   );

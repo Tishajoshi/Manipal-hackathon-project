@@ -5,7 +5,6 @@ import Dashboard from "./pages/Dashboard";
 import SignInPage from "./pages/auth/SignInPage";
 import SignUpPage from "./pages/auth/SignUpPage";
 import UserProfilePage from "./pages/auth/UserProfilePage";
-import { SignedIn, SignedOut, RedirectToSignIn } from '@clerk/clerk-react';
 import Settings from './pages/Settings';
 import About from './pages/About';
 import HowToUse from './pages/HowToUse';
@@ -27,16 +26,7 @@ export default function App() {
         <Route path="/how-to-use" element={<HowToUse />} />
         <Route
           path="/dashboard"
-          element={
-            <>
-              <SignedIn>
-                <Dashboard />
-              </SignedIn>
-              <SignedOut>
-                <RedirectToSignIn />
-              </SignedOut>
-            </>
-          }
+          element={<Dashboard />}
         />
         <Route
           path="*"

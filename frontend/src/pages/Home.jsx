@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import homepageBg from "../assets/homepage[2].png";
 import Particles from "../components/Particles";
 import Feature from "./Feature";
@@ -6,6 +6,7 @@ import Dashboard from "./Dashboard";
 import About from "./About";
 import { useLocation } from "react-router-dom";
 import bot2 from "../assets/bot2.png";
+const ApiDataDisplay = React.lazy(() => import("../components/ApiDataDisplay"));
 
 export default function Home() {
   const location = useLocation();
@@ -97,7 +98,14 @@ export default function Home() {
               </div>
             </div>
           </div>
-          <div className="mt-5 flex justify-center">
+          <div className="mt-5 flex flex-col items-center">
+            {/* API Data Display Component */}
+            <div className="w-full max-w-4xl mx-auto mt-8">
+              <h2 className="text-2xl font-bold text-white text-center mb-4">Backend API Connection</h2>
+              <React.Suspense fallback={<div className="text-white text-center">Loading API component...</div>}>
+                <ApiDataDisplay />
+              </React.Suspense> 
+            </div>
             <div className="relative group inline-flex">
               <button
                 onClick={scrollToFeature}

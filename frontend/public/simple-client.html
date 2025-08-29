@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple API Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .card {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .item {
+            border: 1px solid #eee;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 10px;
+            background-color: #f9f9f9;
+        }
+        .item h3 {
+            margin-top: 0;
+            color: #2c3e50;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .loading {
+            background-color: #cce5ff;
+            color: #004085;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <h1>Simple API Client</h1>
+    
+    <div class="card">
+        <h2>API Status</h2>
+        <div id="status" class="status loading">Checking API status...</div>
+        <button onclick="checkApiStatus()">Check API Status</button>
+    </div>
+    
+    <div class="card">
+        <h2>API Data</h2>
+        <div id="data-container"></div>
+        <button onclick="fetchData()">Fetch Data</button>
+    </div>
+
+    <script>
+        // Function to check API status
+        function checkApiStatus() {
+            const statusElement = document.getElementById('status');
+            statusElement.className = 'status loading';
+            statusElement.textContent = 'Checking API status...';
+            
+            fetch('http://localhost:8000/ping')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('API is not responding properly');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    statusElement.className = 'status success';
+                    statusElement.textContent = 'API is running! Response: ' + JSON.stringify(data);
+                })
+                .catch(error => {
+                    statusElement.className = 'status error';
+                    statusElement.textContent = 'Error connecting to API: ' + error.message;
+                });
+        }
+        
+        // Function to fetch data from API
+        function fetchData() {
+            const dataContainer = document.getElementById('data-container');
+            dataContainer.innerHTML = '<div class="status loading">Loading data...</div>';
+            
+            // Since we've verified the ping endpoint works, let's use that for now
+            fetch('http://localhost:8000/ping')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch data');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // Display the ping response
+                    dataContainer.innerHTML = `
+                        <div class="item">
+                            <h3>API Response</h3>
+                            <p>Message: ${data.message}</p>
+                        </div>
+                    `;
+                })
+                .catch(error => {
+                    dataContainer.innerHTML = `<div class="status error">Error: ${error.message}</div>`;
+                });
+        }
+        
+        // Check API status on page load
+        window.onload = function() {
+            checkApiStatus();
+        };
+    </script>
+</body>
+</html>

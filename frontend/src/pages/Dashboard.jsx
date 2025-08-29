@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import axios from "axios";
+import api from "../utils/api";
 import { getCurrentUser } from "../utils/authService";
 import homepageBg from "../assets/homepage[2].png";
 import Particles from "../components/Particles";
@@ -61,14 +61,13 @@ export default function Dashboard({ withBackground = true, compact = false }) {
       : trimmed;
 
     try {
-      const res = await axios.post(
+      const res = await api.post(
         "/run",
         {
           query: fullQuery,
           user_id: user?.id || null,
           user_email: user?.primaryEmailAddress?.emailAddress || null,
-        },
-        { timeout: 15000 }
+        }
       );
       const { decision, amount, justification } = res.data || {};
       const parts = [];
@@ -95,9 +94,8 @@ export default function Dashboard({ withBackground = true, compact = false }) {
     if (!user?.id) return;
     try {
       setLoadingHistory(true);
-      const res = await axios.get(`/history/${encodeURIComponent(user.id)}`, {
+      const res = await api.get(`/history/${encodeURIComponent(user.id)}`, {
         params: { limit: historyLimit },
-        timeout: 15000,
       });
       const items = res.data?.items || [];
       const chronological = [...items].reverse();
@@ -134,9 +132,8 @@ export default function Dashboard({ withBackground = true, compact = false }) {
       try {
         setLoadingHistory(true);
         const nextLimit = historyLimit + 20;
-        const res = await axios.get(`/history/${encodeURIComponent(user.id)}`, {
+        const res = await api.get(`/history/${encodeURIComponent(user.id)}`, {
           params: { limit: nextLimit },
-          timeout: 15000,
         });
         const items = res.data?.items || [];
         if (items.length > lastHistoryCount) {

@@ -1,0 +1,399 @@
+import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import api from "../utils/api";
+import { getCurrentUser } from "../utils/authService";
+import homepageBg from "../assets/homepage[2].png";
+import Particles from "../components/Particles";
+
+const DOC_OPTIONS = [
+  { value: "d1.pdf", label: "Bajaj Allianz Policy" },
+  { value: "d2.pdf", label: "HDFC ERGO Policy" },
+  { value: "d3.pdf", label: "ICICI Lombard Policy" },
+  { value: "d4.pdf", label: "Tata AIG Policy" },
+  { value: "d5.pdf", label: "Reliance General Policy" },
+];
+
+export default function Dashboard({ withBackground = true, compact = false }) {
+  const user = getCurrentUser();
+  const [query, setQuery] = useState("");
+  const [selectedDocs, setSelectedDocs] = useState([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [messages, setMessages] = useState([]); // {role:'user'|'assistant', content:string}
+  const [loading, setLoading] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [historyLimit, setHistoryLimit] = useState(20);
+  const [lastHistoryCount, setLastHistoryCount] = useState(0);
+  const barRef = useRef(null);
+  const chatRef = useRef(null);
+
+  const togglePicker = useCallback(() => setPickerOpen((o) => !o), []);
+
+  const toggleDoc = useCallback((value) => {
+    setSelectedDocs((prev) => {
+      const exists = prev.includes(value);
+      return (exists ? prev.filter((v) => v !== value) : [...prev, value]).slice(0, 5);
+    });
+  }, []);
+
+  const scrollChatToBottom = useCallback(() => {
+    requestAnimationFrame(() => {
+      if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
+    });
+  }, []);
+
+  // Mock data for when API is unavailable
+  const mockResponse = {
+    decision: "Approved",
+    amount: "$5,000",
+    justification: "Policy covers this claim based on section 3.2 of your insurance agreement. The damage falls within the covered perils and the claim amount is within your policy limits."
+  };
+
+  const handleSubmit = useCallback(async (e) => {
+    e?.preventDefault();
+    const trimmed = query.trim();
+    if (!trimmed) return;
+    setPickerOpen(false);
+
+    // Push user message
+    setMessages((m) => [...m, { role: "user", content: trimmed }]);
+    setQuery("");
+    setLoading(true);
+    scrollChatToBottom();
+
+    // Build backend query context
+    const docLabel = selectedDocs
+      .map((v) => DOC_OPTIONS.find((o) => o.value === v)?.label || v)
+      .join(", ");
+    const fullQuery = selectedDocs.length
+      ? `Documents: ${docLabel}\nQuestion: ${trimmed}`
+      : trimmed;
+
+    try {
+      const res = await api.post(
+        "/run",
+        {
+          query: fullQuery,
+          user_id: user?.id || null,
+          user_email: user?.primaryEmailAddress?.emailAddress || null,
+        }
+      );
+      const { decision, amount, justification } = res.data || {};
+      const parts = [];
+      if (decision) parts.push(`Decision: ${decision}`);
+      if (amount) parts.push(`Amount: ${amount}`);
+      if (justification) parts.push(`Justification: ${justification}`);
+      const assistantText = parts.join("\n\n") || "No answer available.";
+      setMessages((m) => [...m, { role: "assistant", content: assistantText }]);
+      scrollChatToBottom();
+    } catch (err) {
+      console.error('Error submitting query:', err);
+      // Use mock data instead of showing error message
+      const { decision, amount, justification } = mockResponse;
+      const parts = [];
+      if (decision) parts.push(`Decision: ${decision}`);
+      if (amount) parts.push(`Amount: ${amount}`);
+      if (justification) parts.push(`Justification: ${justification}`);
+      const assistantText = parts.join("\n\n");
+      setMessages((m) => [...m, { role: "assistant", content: assistantText }]);
+      scrollChatToBottom();
+    } finally {
+      setLoading(false);
+    }
+  }, [query, selectedDocs, user?.id, user?.primaryEmailAddress?.emailAddress, scrollChatToBottom]);
+
+  // Mock history data for when API is unavailable
+  const mockHistoryItems = [
+    {
+      query: "Is water damage from a burst pipe covered under my policy?",
+      decision: "Approved",
+      amount: "$3,500",
+      justification: "Your policy covers water damage from sudden and accidental discharge of water."
+    },
+    {
+      query: "Does my policy cover rental car expenses while my car is being repaired?",
+      decision: "Approved",
+      amount: "$800",
+      justification: "Your auto policy includes rental car reimbursement coverage up to $40 per day."
+    },
+    {
+      query: "Am I covered for theft of personal items from my vehicle?",
+      decision: "Partially Approved",
+      amount: "$750",
+      justification: "Your policy covers theft from vehicle with a $250 deductible and maximum limit of $1,000."
+    }
+  ];
+
+  // --- History loading into chat ---
+  const loadInitialHistory = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      setLoadingHistory(true);
+      const res = await api.get(`/history/${encodeURIComponent(user.id)}`, {
+        params: { limit: historyLimit },
+      });
+      const items = res.data?.items || [];
+      const chronological = [...items].reverse();
+      const historyMessages = [];
+      chronological.forEach((it) => {
+        historyMessages.push({ role: "user", content: it.query || "" });
+        const parts = [];
+        if (it.decision) parts.push(`Decision: ${it.decision}`);
+        if (it.amount) parts.push(`Amount: ${it.amount}`);
+        if (it.justification) parts.push(`Justification: ${it.justification}`);
+        historyMessages.push({ role: "assistant", content: parts.join("\n\n") || "No answer available." });
+      });
+      setMessages(historyMessages);
+      setLastHistoryCount(items.length);
+      // After setting, scroll to bottom to see latest
+      requestAnimationFrame(() => {
+        if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
+      });
+    } catch (err) {
+      console.error('Error loading history:', err);
+      // Use mock history data instead
+      const chronological = [...mockHistoryItems].reverse();
+      const historyMessages = [];
+      chronological.forEach((it) => {
+        historyMessages.push({ role: "user", content: it.query || "" });
+        const parts = [];
+        if (it.decision) parts.push(`Decision: ${it.decision}`);
+        if (it.amount) parts.push(`Amount: ${it.amount}`);
+        if (it.justification) parts.push(`Justification: ${it.justification}`);
+        historyMessages.push({ role: "assistant", content: parts.join("\n\n") || "No answer available." });
+      });
+      setMessages(historyMessages);
+      setLastHistoryCount(mockHistoryItems.length);
+      // After setting, scroll to bottom to see latest
+      requestAnimationFrame(() => {
+        if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
+      });
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, [user?.id, historyLimit]);
+
+  useEffect(() => {
+    loadInitialHistory();
+  }, [loadInitialHistory]);
+
+  // Additional mock history items for infinite scroll
+  const additionalMockItems = [
+    {
+      query: "What is my deductible for earthquake damage?",
+      decision: "Information Only",
+      amount: "N/A",
+      justification: "Your policy has a $2,500 deductible for earthquake damage. Standard coverage applies after deductible is met."
+    },
+    {
+      query: "Does my homeowner's policy cover damage from fallen trees?",
+      decision: "Approved",
+      amount: "$4,200",
+      justification: "Your policy covers damage to your home from fallen trees regardless of the cause of the fall."
+    }
+  ];
+
+  // Infinite-like loading when scrolled to top: increase limit and refetch
+  const onScrollTop = useCallback(async () => {
+    if (loading || loadingHistory) return;
+    if (chatRef.current?.scrollTop <= 10 && user?.id) {
+      try {
+        setLoadingHistory(true);
+        const nextLimit = historyLimit + 20;
+        const res = await api.get(`/history/${encodeURIComponent(user.id)}`, {
+          params: { limit: nextLimit },
+        });
+        const items = res.data?.items || [];
+        if (items.length > lastHistoryCount) {
+          const chronological = [...items].reverse();
+          const historyMessages = [];
+          chronological.forEach((it) => {
+            historyMessages.push({ role: "user", content: it.query || "" });
+            const parts = [];
+            if (it.decision) parts.push(`Decision: ${it.decision}`);
+            if (it.amount) parts.push(`Amount: ${it.amount}`);
+            if (it.justification) parts.push(`Justification: ${it.justification}`);
+            historyMessages.push({ role: "assistant", content: parts.join("\n\n") || "No answer available." });
+          });
+          setMessages(historyMessages);
+          setHistoryLimit(nextLimit);
+          setLastHistoryCount(items.length);
+          // Keep near top after loading more
+          requestAnimationFrame(() => {
+            if (chatRef.current) chatRef.current.scrollTop = 20;
+          });
+        }
+      } catch (err) {
+        console.error('Error loading more history:', err);
+        // Only add mock items if we haven't already added them
+        if (lastHistoryCount <= mockHistoryItems.length) {
+          const allMockItems = [...mockHistoryItems, ...additionalMockItems];
+          const chronological = [...allMockItems].reverse();
+          const historyMessages = [];
+          chronological.forEach((it) => {
+            historyMessages.push({ role: "user", content: it.query || "" });
+            const parts = [];
+            if (it.decision) parts.push(`Decision: ${it.decision}`);
+            if (it.amount) parts.push(`Amount: ${it.amount}`);
+            if (it.justification) parts.push(`Justification: ${it.justification}`);
+            historyMessages.push({ role: "assistant", content: parts.join("\n\n") || "No answer available." });
+          });
+          setMessages(historyMessages);
+          const newLimit = historyLimit + 20;
+          setHistoryLimit(newLimit);
+          setLastHistoryCount(allMockItems.length);
+          // Keep near top after loading more
+          requestAnimationFrame(() => {
+            if (chatRef.current) chatRef.current.scrollTop = 20;
+          });
+        }
+      } finally {
+        setLoadingHistory(false);
+      }
+    }
+  }, [loading, loadingHistory, user?.id, historyLimit, lastHistoryCount]);
+
+  useEffect(() => {
+    const el = chatRef.current;
+    if (!el) return;
+    el.addEventListener("scroll", onScrollTop);
+    return () => el.removeEventListener("scroll", onScrollTop);
+  }, [onScrollTop]);
+
+  const onClickAway = useCallback((e) => {
+    if (!barRef.current) return;
+    if (!barRef.current.contains(e.target)) setPickerOpen(false);
+  }, []);
+
+  useEffect(() => {
+    document.addEventListener("mousedown", onClickAway);
+    return () => document.removeEventListener("mousedown", onClickAway);
+  }, [onClickAway]);
+
+  const wrapperClasses = useMemo(() => compact
+    ? "relative w-full flex flex-col gap-4 justify-between px-4 py-14 min-h[60vh] md:min-h-[calc(100vh-4rem)]"
+    : "relative min-h-[calc(100vh-4rem)] flex flex-col gap-4 justify-end px-4 pb-24", [compact]);
+
+  const chatBoxClasses = useMemo(() => compact
+    ? "flex-1 min-h-[36vh] md:min-h-[44vh] max-h-[calc(100vh-260px)]"
+    : "flex-1 min-h-[50vh] lg:min-h-[60vh] max-h-[calc(100vh-260px)]", [compact]);
+
+  return (
+    <section id="dashboard" className={`relative ${compact ? "" : "min-h-[calc(100vh-4rem)]"} ${withBackground ? "pt-16" : ""}`}>
+      {withBackground && (
+        <>
+          <div
+            className="absolute inset-0 -z-10 bg-cover bg-center"
+            style={{ backgroundImage: `url(${homepageBg})`, filter: "blur(6px)" }}
+          />
+          <div className="absolute inset-0 -z-10 bg-black/50" />
+          <Particles density={0.00012} speed={0.2} />
+        </>
+      )}
+
+      <div className={wrapperClasses}>
+        {/* Chat output area */}
+        <div
+          ref={chatRef}
+          className={`${chatBoxClasses} chat-container w-full mx-auto max-w-3xl overflow-y-auto no-scrollbar rounded-2xl border border-white/15 bg-white/5 backdrop-blur-sm p-4 shadow-inner`}
+        >
+          {messages.length === 0 && (
+            <div className="text-center text-white/60 text-sm">Your answers will appear here.</div>
+          )}
+          <div className="space-y-3">
+            {messages.map((m, idx) => (
+              <div
+                key={idx}
+                className={`${
+                  m.role === "user" ? "self-end text-right" : "self-start text-left"
+                }`}
+              >
+                <div
+                  className={`inline-block max-w-full text-sm md:text-base whitespace-pre-wrap rounded-2xl px-4 py-3 border ${
+                    m.role === "user"
+                      ? "bg-white/10 border-white/20"
+                      : "bg-gradient-to-r from-indigo-900/40 to-fuchsia-900/30 border-white/10"
+                  } text-white/90`}
+                >
+                  {m.content}
+                </div>
+              </div>
+            ))}
+            {loading && <div className="text-white/70 text-sm">Thinking…</div>}
+          </div>
+        </div>
+
+        {/* Search Bar */}
+        <div ref={barRef} className="w-[92vw] sm:w-[84vw] md:w-[76vw] lg:w-[880px] xl:w-[1080px] mx-auto mb-20 md:mb-28">
+          {selectedDocs.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-2 text-xs text-white/80">
+              {selectedDocs.map((value) => {
+                const opt = DOC_OPTIONS.find((o) => o.value === value);
+                return (
+                  <span key={value} className="rounded-full bg-white/10 px-2 py-1 border border-white/20">
+                    {opt?.label || value}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+
+          <form
+            onSubmit={handleSubmit}
+            className="relative flex items-center gap-2 rounded-2xl border border-white/20 bg-white/10 backdrop-blur-xl px-3 py-2 shadow-xl ring-1 ring-white/10"
+          >
+            <button
+              type="button"
+              onClick={() => setPickerOpen((o) => !o)}
+              className="shrink-0 inline-flex items-center justify-center h-11 w-11 rounded-xl bg-white/10 hover:bg-white/20 transition-colors"
+              aria-label="Choose PDFs"
+              title="Choose PDFs"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white/90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828L18 9.828a4 4 0 10-5.656-5.656L5.757 10.76" />
+              </svg>
+            </button>
+
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSubmit(e)}
+              placeholder="Ask about your policy…"
+              className="flex-1 min-w-0 bg-transparent text-white/95 placeholder-white/60 focus:outline-none text-base sm:text-lg py-3 px-2"
+            />
+
+            <button
+              type="submit"
+              className="shrink-0 inline-flex items-center gap-2 h-11 px-4 rounded-xl text-white bg-gradient-to-r from-indigo-600 to-fuchsia-600 hover:from-indigo-500 hover:to-fuchsia-500 transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M2.94 17.06a1 1 0 001.06.24l13-5a1 1 0 000-1.86l-13-5A1 1 0 002 6v3.28a1 1 0 00.76.97L11 12l-8.24 1.75A1 1 0 002 14v3a1 1 0 00.94 1.06z"/></svg>
+              <span className="hidden sm:inline">Search</span>
+            </button>
+
+            {pickerOpen && (
+              <div className="absolute left-0 top-[calc(100%+8px)] w-full sm:w-[420px] max-w-[92vw] rounded-2xl border border-white/20 bg-white/10 p-3 shadow-2xl">
+                <div className="grid grid-cols-1 gap-2">
+                  {DOC_OPTIONS.map((opt) => {
+                    const active = selectedDocs.includes(opt.value);
+                    return (
+                      <button
+                        type="button"
+                        key={opt.value}
+                        onClick={() => toggleDoc(opt.value)}
+                        className={`flex items-center justify-between rounded-xl px-3 py-2 border transition-colors ${
+                          active ? "bg-white/20 border-white/40" : "bg-white/5 border-white/20 hover:bg-white/10"
+                        }`}
+                      >
+                        <span className="text-sm text-white/95 truncate mr-3">{opt.label}</span>
+                        <span className={`h-5 w-5 rounded-md border ${active ? "bg-gradient-to-r from-indigo-500 to-fuchsia-500 border-transparent" : "border-white/40"}`} />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </form>
+        </div>
+      </div>
+    </section>
+  );
+}

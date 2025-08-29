@@ -5,11 +5,16 @@ An AI-powered chatbot that simplifies healthcare insurance policies. Upload your
 🚀 Features
 
 📄 PDF Intelligence: Upload and process complex insurance policy documents.
+
 💬 Natural Language Queries: Ask questions like "Is knee surgery covered?" or "What is the claim amount for hospitalization?"
+
 ✅ Structured Answers: Receive clear responses with:
 
+
 Coverage Status: Yes or No.
+
 Financial Details: Claim amount, co-pay, or deductible information.
+
 Explanation & Source: A clear explanation highlighting the relevant section from your policy document.
 
 🔒 Transparency: Every answer is backed by direct quotes from your policy for full transparency and trust.
@@ -43,7 +48,7 @@ An OpenAI API key (https://platform.openai.com/)
 ⚙️ Installation & Setup
 
 Clone the repository:
-git clone https://github.com/selena-arch/hackathon-project.git
+git clone https://github.com/Tishajoshi/Manipal-hackathon-project.git
 cd hackathon-project
 
 Create a virtual environment and activate it:
@@ -59,8 +64,8 @@ OPENAI_API_KEY=your_openai_api_key_here
 PINECONE_API_KEY=your_pinecone_api_key_here
 PINECONE_ENVIRONMENT=your_pinecone_environment_here
 PINECONE_INDEX_NAME=your_pinecone_index_name_here
-# Optional: MongoDB connection string
-# MONGODB_URI=your_mongodb_connection_string_here
+#Optional: MongoDB connection string
+#MONGODB_URI=your_mongodb_connection_string_here
 
 Run the application:
 streamlit run app.py  # For the frontend
@@ -79,12 +84,19 @@ Generate: These relevant chunks are sent to OpenAI's GPT model, which synthesize
 
 hackathon-project/
 ├── app.py                 # Main Streamlit frontend application
+
 ├── main.py               # FastAPI backend server (if applicable)
+
 ├── requirements.txt      # Python dependencies
+
 ├── .env                  # Environment variables (gitignored)
+
 ├── utils/
+
 │   ├── pdf_processor.py  # Code for PDF text extraction and chunking
+
 │   └── pinecone_utils.py # Functions for interacting with Pinecone
+
 └── README.md
 
 👥 Contributors

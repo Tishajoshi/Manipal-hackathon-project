@@ -1,4 +1,4 @@
-POLICYPRO🤖
+POLICYPRO - From Confusion to Clarity
 
 An AI-powered chatbot that simplifies healthcare insurance policies. Upload your policy PDF, ask questions in plain English, and get instant, accurate answers about your coverage, claim amounts, and exclusions.
 
@@ -82,7 +82,7 @@ Generate: These relevant chunks are sent to OpenAI's GPT model, which synthesize
 
 📁 Project Structure
 
-hackathon-project/
+Manipal-hackathon-project/
 ├── app.py                 # Main Streamlit frontend application
 
 ├── main.py               # FastAPI backend server (if applicable)
@@ -113,5 +113,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 🙏 Acknowledgments
 
 Built for the [HACKVERSE-2025] in Manipal Institute Of Technology, Bengaluru.
-
 Inspired by the need for transparency and simplicity in the healthcare insurance industry.
